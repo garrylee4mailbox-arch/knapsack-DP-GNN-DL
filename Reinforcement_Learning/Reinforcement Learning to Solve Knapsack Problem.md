@@ -403,7 +403,7 @@ def solve_knapsack(weights, values, capacity, q_table):
 
         if action == 1:
 
-            print(f"物品 {item_idx} (重{weights[item_idx]}, 值{values[item_idx]}): -> 1")
+            print(f"items {item_idx} (weights{weights[item_idx]}, values{values[item_idx]}): -> 1")
 
             total_value += values[item_idx]
 
@@ -413,7 +413,7 @@ def solve_knapsack(weights, values, capacity, q_table):
 
         else:
 
-            print(f"物品 {item_idx} (重{weights[item_idx]}, 值{values[item_idx]}): -> 0")
+            print(f"items {item_idx} (weights{weights[item_idx]}, values{values[item_idx]}): -> 0")
 
   
 
