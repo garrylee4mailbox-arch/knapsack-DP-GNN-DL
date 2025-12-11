@@ -181,7 +181,251 @@ We'll need:
 - **Invalid actions:** Mask them or penalize.
 
 ### Step3: Code Implementation
+#### 3.1. Disposition of Initial Environment:
+```python
+    def __init__(self, weights, values, capacity):
 
+        self.weights = weights  # list of item weights
+
+        self.values = values  # list of item values
+
+        self.capacity = capacity  # list of knapsack capacity
+
+        self.n_items = len(weights)  # number of items
+
+```
+
+#### 3.2. Implementation of Action:
+```python
+    def step(self, state, action):
+
+        """
+
+        Take action with return (new state, reward, if down or not)
+
+        state: (item_index, current_capacity)
+
+        action: 0 (skip) or 1 (take)
+
+        """
+
+        item_idx, current_cap = state
+
+        # Check if all items are already in consideration
+
+        if item_idx >= self.n_items:
+
+            return state, 0, True
+
+        reward = 0
+
+        # Pattern of action taking
+
+        if action == 1:  # try to take current item
+
+            if self.weights[item_idx] <= current_cap:
+
+                # if the item can be taken: then take it and get value, meanwhile the capacity decrease
+
+                reward = self.values[item_idx]
+
+                next_cap = current_cap - self.weights[item_idx]
+
+            else:
+
+                # if the item cannot be taken: punishment will be implemented, meanwhile capacity stays the same (or the action itself can be regarded as illegal)
+
+
+                reward = -100  # factor of punishment, for telling agent not try to take item which is larger than capacity
+
+                next_cap = current_cap
+
+        else:  # action == 0 (skip)
+
+            reward = 0
+
+            next_cap = current_cap
+
+  
+
+        # turn to the next item
+
+        next_state = (item_idx + 1, next_cap)
+
+  
+
+        # check if this is the last step
+
+        done = (item_idx + 1 == self.n_items)
+
+        return next_state, reward, done
+
+```
+
+
+#### 3.3. Q-Table:
+```python
+def train_q_learning(weights, values, capacity, episodes=10000, alpha=0.1, gamma=0.95):
+
+    env = KnapsackEnvironment(weights, values, capacity)
+
+    q_table = np.zeros((env.n_items + 1, capacity + 1, 2))
+
+```
+
+
+#### 3.4. Implementation of Dynamic Greedy Policy $\epsilon$ :
+```python
+    epsilon = 1.0  # initial value of greedy policy is set as 1, which means totally random
+
+    epsilon_min = 0.01  # minimum of greedy policy which keeps 1% randomization
+
+    epsilon_decay = 0.9995  # discount factor: decrease the greedy policy as each time of training finished
+
+    for episode in range(episodes):
+
+        state = env.reset()
+
+        done = False
+        
+
+        while not done:
+
+            item_idx, current_cap = state
+
+            # strategy: randomly explore on early stage, utilize experience in later period
+
+            if random.uniform(0, 1) < epsilon:
+
+                action = random.choice([0, 1])  # randomly choose
+
+            else:
+
+                action = np.argmax(q_table[item_idx, current_cap])  # take the action with maximum of Q-value
+
+  
+
+            next_state, reward, done = env.step(state, action)
+
+            next_item_idx, next_cap = next_state
+
+  
+
+            old_value = q_table[item_idx, current_cap, action]
+
+  
+
+            # Get the maximum of Q-value of the next step
+
+            if next_item_idx < env.n_items:
+
+                next_max = np.max(q_table[next_item_idx, next_cap])
+
+            else:
+
+                next_max = 0
+
+  
+
+            # Update the formula of Q-table
+
+            new_value = old_value + alpha * (reward + gamma * next_max - old_value)
+
+            q_table[item_idx, current_cap, action] = new_value
+
+            state = next_state
+
+  
+
+        # decrease the greedy policy as each time of training finished
+
+        if epsilon > epsilon_min:
+
+            epsilon *= epsilon_decay
+
+  
+
+    return q_table
+
+```
+
+#### 3.5. Solve the Knapsack Problem with Q-table:
+```python
+def solve_knapsack(weights, values, capacity, q_table):
+
+    """
+
+    Solve the Knapsack Problem with well trained Q-table
+    
+    """
+
+    env = KnapsackEnvironment(weights, values, capacity)
+
+    state = env.reset()
+
+    done = False
+
+  
+
+    total_value = 0
+
+    total_weight = 0
+
+    selected_items = []
+
+  
+
+    print("\n--- Agent Decision Making Process ---")
+
+  
+
+    while not done:
+
+        item_idx, current_cap = state
+
+  
+
+        # directly choose the action with maximum of Q-value (greedy policy)
+
+        action = np.argmax(q_table[item_idx, current_cap])
+
+  
+
+        # logic judgement: even though Q-table suggests taking the item, we'd better check substantively if the capacity is enough or not
+
+        # (since if the training is not surficient, Q-table may suggest illegal action)
+
+        if action == 1 and weights[item_idx] > current_cap:
+
+            action = 0  # compulsorily modify (or let it fail)
+
+  
+
+        if action == 1:
+
+            print(f"物品 {item_idx} (重{weights[item_idx]}, 值{values[item_idx]}): -> 1")
+
+            total_value += values[item_idx]
+
+            total_weight += weights[item_idx]
+
+            selected_items.append(item_idx)
+
+        else:
+
+            print(f"物品 {item_idx} (重{weights[item_idx]}, 值{values[item_idx]}): -> 0")
+
+  
+
+        next_state, _, done = env.step(state, action)
+
+        state = next_state
+
+  
+
+    return total_value, total_weight, selected_items
+
+```
 
 # 4. Performance Evaluation and Conclusion
 
