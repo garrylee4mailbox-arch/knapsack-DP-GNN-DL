@@ -443,7 +443,7 @@ The **MDKP** is framed as a finite-horizon, episodic **MDP** where the agent dec
 - **Actions (A)**: Binary decision per item.
     - In code: `action` in `step()` — 0 = skip, 1 = take.
     - Discrete action space with 2 options.
-- **Transition Dynamics** ($P(s'|s,a)$): Deterministic.
+- **Transition Dynamics** ( $P(s'|s,a)$ ): Deterministic.
     - In code: `step()` method.
     - After action:
         - Always advance to next item (`current_item += 1`).
@@ -456,7 +456,7 @@ The **MDKP** is framed as a finite-horizon, episodic **MDP** where the agent dec
     - Ends when `done=True` (all items processed).
     - Each episode = one complete solution (selection of subset of items).
 ### Step2: Implementation Overview
-#### Reward Function ($R(s,a,s')$)
+#### Reward Function ( $R(s,a,s')$ )
 The reward signal guides the agent toward maximizing total value while respecting constraints.
 
 - In code: Inside `step()`.
@@ -466,7 +466,7 @@ The reward signal guides the agent toward maximizing total value while respectin
         - If skip (action=0) → 0 reward.
     - No reward at terminal state.
     - **Objective alignment**: The undiscounted sum of rewards ≈ total value (scaled), minus penalties. Since penalties are avoided in good policies, the agent learns to maximize the knapsack objective (total value) subject to constraints.
-#### **Policy ($π(a|s)$)**
+#### **Policy ( $π(a|s)$ )**
 The "brain" that decides actions — here, a stochastic policy learned by a neural network.
 
 - In code: `PolicyNetwork` class.
