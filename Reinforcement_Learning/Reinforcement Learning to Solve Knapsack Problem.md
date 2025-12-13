@@ -426,6 +426,361 @@ def solve_knapsack(weights, values, capacity, q_table):
     return total_value, total_weight, selected_items
 
 ```
+## 3.2. RL Algorithm for Multi-Dimensional Knapsack Problem (MDKP)
+
+### Step 1: Formulating the Environment as a MDP in RL
+The **MDKP** is framed as a finite-horizon, episodic **MDP** where the agent decides for each item ***in a fixed order*** (items 0 to n-1).
+
+- **States (S)**: Information about the current decision point.
+    - In code: `get_state()` method in `MDKPEnv`.
+    - State vector (5-dimensional, normalized for better NN training):
+        - Value of the current item (***normalized by ~100***).
+        - Weight of current item in dimension 1 (***normalized by cap1***).
+        - Weight of current item in dimension 2 (***normalized by cap2***).
+        - Remaining capacity in dimension 1 (***fraction of cap1***).
+        - Remaining capacity in dimension 2 (***fraction of cap2***).
+    - Terminal state: When all items processed (`current_item >= n_items`), returns zeros.
+- **Actions (A)**: Binary decision per item.
+    - In code: `action` in `step()` — 0 = skip, 1 = take.
+    - Discrete action space with 2 options.
+- **Transition Dynamics** ($P(s'|s,a)$): Deterministic.
+    - In code: `step()` method.
+    - After action:
+        - Always advance to next item (`current_item += 1`).
+        - If action=1 and item fits both constraints → subtract weights from remaining capacities, add value.
+        - If action=1 but item doesn't fit → no change to capacities/value, but apply penalty.
+        - Next state computed based on new remaining capacities and next item.
+    - The environment enforces hard constraints partially (via penalties for violations) while allowing learning.
+- **Episode**: One full pass through all items.
+    - In code: `reset()` starts a new episode (full capacities, item 0).
+    - Ends when `done=True` (all items processed).
+    - Each episode = one complete solution (selection of subset of items).
+### Step2: Implementation Overview
+#### Reward Function ($R(s,a,s')$)
+The reward signal guides the agent toward maximizing total value while respecting constraints.
+
+- In code: Inside `step()`.
+    - Sparse + shaped reward:
+        - If take (action=1) and item fits → + (item value / 10.0) — positive, scaled to prevent exploding gradients.
+        - If take but doesn't fit → -5.0 — strong negative penalty to discourage invalid selections.
+        - If skip (action=0) → 0 reward.
+    - No reward at terminal state.
+    - **Objective alignment**: The undiscounted sum of rewards ≈ total value (scaled), minus penalties. Since penalties are avoided in good policies, the agent learns to maximize the knapsack objective (total value) subject to constraints.
+#### **Policy ($π(a|s)$)**
+The "brain" that decides actions — here, a stochastic policy learned by a neural network.
+
+- In code: `PolicyNetwork` class.
+    - Input: State vector (5 dims).
+    - Output: Probability distribution over actions — $softmax$ → $[P(skip), P(take)]$.
+    - During training: Sample actions stochastically (`Categorical` distribution) for exploration.
+    - During testing: Greedy — choose argmax (most probable action).
+    - This is a **parametric policy** $π_θ(a|s)$, where $θ$ are the network weights.
+
+#### **Training: REINFORCE (Policy Gradient)**
+Optimizes the policy to maximize expected cumulative reward.
+
+- In code: `train()` function loop.
+    - For each episode:
+        - Rollout a full trajectory (sequence of states, actions, rewards) using current stochastic policy.
+        - Compute **discounted returns** $(G_t)$ for each timestep: Future rewards discounted by $γ=0.99$.
+            - Code: Backward pass accumulating $R = r + γ*R$.
+            - Normalized for lower variance.
+        - Update policy via REINFORCE gradient:
+            - Loss = $-∑ log π(a_t|s_t) * G_t$
+            - Gradient ascent to increase probability of actions leading to high returns.
+    - Goal: Maximize expected total value over many episodes.
+
+### Step3: Code Implementation
+#### 3.1. MDKP Environment (`MDKPnv` Class)
+This class simulates the knapsack problem as a sequential decision environment:
+
+```python
+class MDKPEnv:
+    def __init__(self, values, weights_dim1, weights_dim2, cap1, cap2):
+        self.values = values                  # list/array of item values
+        self.w1 = weights_dim1                # weights for constraint 1
+        self.w2 = weights_dim2                # weights for constraint 2
+        self.cap1_max = cap1                  # maximum capacity 1
+        self.cap2_max = cap2                  # maximum capacity 2
+        self.n_items = len(values)
+        self.reset()
+```
+- Constructor stores problem data and resets the environment.
+
+```python
+def reset(self):
+	    self.current_item = 0                 # start at first item
+        self.current_cap1 = self.cap1_max     # full capacities
+        self.current_cap2 = self.cap2_max
+        self.total_value = 0                  # accumulated value
+        return self.get_state()
+```
+- `reset()`: prepares for a new episode (new knapsack filling).
+
+```python
+def get_state(self):
+        if self.current_item >= self.n_items:
+            return np.zeros(5)                # terminal state
+        
+        v = self.values[self.current_item] / 100.0           # normalize value (assume max ~100)
+        w1 = self.w1[self.current_item] / self.cap1_max      # normalize weight 1
+        w2 = self.w2[self.current_item] / self.cap2_max      # normalize weight 2
+        rem1 = self.current_cap1 / self.cap1_max             # remaining capacity 1
+        rem2 = self.current_cap2 / self.cap2_max             # remaining capacity 2
+        
+        return np.array([v, w1, w2, rem1, rem2], dtype=np.float32)
+```
+- Returns a 5-dimensional state vector for the current item:
+    1. Normalized value of current item
+    2. Normalized weight in dimension 1
+    3. Normalized weight in dimension 2
+    4. Fraction of capacity 1 still available
+    5. Fraction of capacity 2 still available
+- Normalization helps the neural network learn faster.
+
+```python
+def step(self, action):
+        reward = 0
+        done = False
+        
+        if action == 1:  # take the item
+            item_w1 = self.w1[self.current_item]
+            item_w2 = self.w2[self.current_item]
+            
+            if item_w1 <= self.current_cap1 and item_w2 <= self.current_cap2:
+                # Can take it → update capacities and reward
+                self.current_cap1 -= item_w1
+                self.current_cap2 -= item_w2
+                r = self.values[self.current_item]
+                self.total_value += r
+                reward = r / 10.0                     # scale reward to avoid huge gradients
+            else:
+                # Invalid action → give negative reward (penalty)
+                reward = -5.0
+                # Item is NOT taken (capacities unchanged)
+                
+        # Always move to next item
+        self.current_item += 1
+        
+        if self.current_item >= self.n_items:
+            done = True
+            
+        next_state = self.get_state()
+        return next_state, reward, done
+```
+- `step(action)`: executes action (0 = skip, 1 = take).
+- Gives positive reward only if item fits.
+- Penalizes heavily (-5) if trying to take an item that doesn't fit.
+- Moves to next item regardless.
+- Returns next state, reward, and whether episode is finished.
+
+#### 3.2. Policy Network
+A small neural network that outputs probabilities of taking or skipping the current item.
+
+```python
+class PolicyNetwork(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(PolicyNetwork, self).__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)   # 5 → 32
+        self.fc2 = nn.Linear(hidden_dim, output_dim)   # 32 → 2 (skip/take)
+        
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.softmax(x, dim=1)  # probabilities summing to 1
+```
+- Simple 2-layer MLP.
+- Output: `[prob_skip, prob_take]`.
+
+#### 3.2. Training with REINFORCE (`train()` function)
+```python
+def train():
+    # Generate random problem instance
+    N_ITEMS = 20
+    np.random.seed(42)
+    values = np.random.randint(10, 100, N_ITEMS)
+    w1s = np.random.randint(1, 15, N_ITEMS)
+    w2s = np.random.randint(1, 15, N_ITEMS)
+    CAP1 = 50
+    CAP2 = 50
+```
+- Fixed seed for reproducibility.
+- 20 items, two capacities of 50 each.
+
+```python
+env = MDKPEnv(values, w1s, w2s, CAP1, CAP2)
+    policy = PolicyNetwork(input_dim=5, hidden_dim=32, output_dim=2)
+    optimizer = optim.Adam(policy.parameters(), lr=0.01)
+    
+    gamma = 0.99
+    num_episodes = 5000
+```
+- Create environment and policy network.
+- Adam optimizer with learning rate 0.01.
+- Discount factor $γ = 0.99$.
+
+```python
+episode_rewards_history = []
+
+    for episode in range(num_episodes):
+        state = env.reset()
+        log_probs = []   # store log probabilities of chosen actions
+        rewards = []     # store rewards
+
+        # Collect one full trajectory (one complete knapsack filling)
+        while True:
+            state_tensor = torch.from_numpy(state).float().unsqueeze(0)
+            probs = policy(state_tensor)
+            
+            # Sample action from probability distribution
+            m = torch.distributions.Categorical(probs)
+            action = m.sample()
+            
+            next_state, reward, done = env.step(action.item())
+            
+            log_probs.append(m.log_prob(action))  # needed for gradient
+            rewards.append(reward)
+            state = next_state
+            
+            if done:
+                break
+```
+For each episode:
+- Reset environment
+- Roll out a full sequence of decisions
+- Save log-probability of each chosen action and corresponding reward
+
+```python
+episode_rewards_history.append(env.total_value)  # actual objective value
+        
+        # Compute discounted returns (future rewards)
+        returns = []
+        R = 0
+        for r in reversed(rewards):
+            R = r + gamma * R
+            returns.insert(0, R)
+        returns = torch.tensor(returns)
+        
+        # Normalize returns (very important for stable training)
+        if len(returns) > 1:
+            returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+```
+- Calculate discounted cumulative rewards (returns) from the end.
+- Normalize them (zero mean, unit variance) → reduces variance in policy gradient.
+
+```python
+# REINFORCE loss: -log_prob * return (we want to maximize return)
+        policy_loss = []
+        for log_prob, R in zip(log_probs, returns):
+            policy_loss.append(-log_prob * R)
+        
+        optimizer.zero_grad()
+        policy_loss = torch.cat(policy_loss).sum()
+        policy_loss.backward()
+        optimizer.step()
+```
+- Core of REINFORCE: gradient ascent on expected return.
+- Negative sign because we minimize loss, but want to increase probability of good actions.
+
+```python
+if (episode + 1) % 100 == 0:
+            avg_reward = np.mean(episode_rewards_history[-100:])
+            print(f"Episode {episode+1}, Average Value: {avg_reward:.2f}")
+```
+- Print average total value over last 100 episodes every 100 episodes.
+
+#### 3.3. Testing the Trained Policy (`test()` function)
+```python
+def test(policy, env):
+    state = env.reset()
+    print("\n--- test the final policy ---")
+    actions_taken = []
+    
+    while True:
+        state_tensor = torch.from_numpy(state).float().unsqueeze(0)
+        with torch.no_grad():                     # no gradients during testing
+            probs = policy(state_tensor)
+            action = torch.argmax(probs).item()    # greedy: pick most probable action
+            
+        actions_taken.append(action)
+        state, _, done = env.step(action)
+        if done:
+            break
+            
+    print(f"final sequence of actions_taken: {actions_taken}")
+    print(f"final total_value: {env.total_value}")
+    print(f"remaining capacity: {env.current_cap1}, {env.current_cap2}")
+```
+- Runs one episode using **greedy** policy (always choose highest-probability action).
+- Prints which items were taken (1) or skipped (0), final value, and remaining capacities.
+
+#### 3.4. Verification and Benchmarking (`verify_result()`)
+```python
+def verify_result(env, actions, final_value):
+```
+- Takes the sequence of actions from testing and compares results.
+
+**Part 1: Check validity**
+- Recomputes total value and weights from selected items.
+- Confirms no capacity violation.
+
+**Part 2: Greedy benchmark**
+```python
+ratios = []
+    for i in range(env.n_items):
+        w_sum = env.w1[i] + env.w2[i]
+        ratio = env.values[i] / w_sum if w_sum > 0 else 0
+        ratios.append((ratio, i))
+    
+    ratios.sort(key=lambda x: x[0], reverse=True)
+```
+- Simple heuristic: sort items by value / (w1 + w2).
+- Fill knapsack greedily with highest ratio items first.
+
+
+**Part 3: Exact optimal solution using `PuLP`**
+```python
+prob = pulp.LpProblem("MDKP_Optimal", pulp.LpMaximize)
+    x = pulp.LpVariable.dicts("item", range(env.n_items), cat='Binary')
+
+    prob += pulp.lpSum([env.values[i] * x[i] for i in range(env.n_items)])
+
+    prob += pulp.lpSum([env.w1[i] * x[i] for i in range(env.n_items)]) <= env.cap1_max
+    prob += pulp.lpSum([env.w2[i] * x[i] for i in range(env.n_items)]) <= env.cap2_max
+
+    prob.solve(pulp.PULP_CBC_CMD(msg=0))
+    
+    optimal_val = pulp.value(prob.objective)
+```
+- Formulates the problem as 0/1 integer linear program.
+- Solves it exactly using CBC solver (included with PuLP).
+- Compares RL result to true optimum and computes gap percentage.
+
+#### 3.5. Main Execution Block
+```python
+if __name__ == "__main__":
+    trained_policy, env = train()
+    test(trained_policy, env)
+    
+    # Re-run test to capture actions again (since test() doesn't return them)
+    state = env.reset()
+    actions_taken = []
+    while True:
+        state_tensor = torch.from_numpy(state).float().unsqueeze(0)
+        with torch.no_grad():
+            probs = trained_policy(state_tensor)
+            action = torch.argmax(probs).item()
+        actions_taken.append(action)
+        state, _, done = env.step(action)
+        if done: break
+
+    verify_result(env, actions_taken, env.total_value)
+```
+- Trains the agent.
+- Tests it.
+- Repeats test to get action list.
+- Runs full verification.
+
 
 # 4. Performance Evaluation and Conclusion
 
