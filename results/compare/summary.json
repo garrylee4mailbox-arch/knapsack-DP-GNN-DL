@@ -17,5 +17,11 @@
   "avg_gap": {
     "gnn": 0.016803372022849494,
     "dqn": 0.1515573191742895
+  },
+  "DQN_training": {
+    "algorithm": "DQN",
+    "training_steps": 50000,
+    "original_planned_steps": 200000,
+    "note": "Training steps reduced due to hardware constraints"
   }
 }
