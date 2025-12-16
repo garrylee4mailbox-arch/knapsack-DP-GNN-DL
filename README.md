@@ -1,298 +1,187 @@
-# Knapsack Optimization Project (DP / GNN / DL)
-Wenzhou-Kean University · CPS Project · 2025
-- [Knapsack Optimization Project (DP / GNN / DL)](#knapsack-optimization-project-dp--gnn--dl)
-  - [0. Documentation and Meetings](#0-documentation-and-meetings)
-  - [📄 会前必读文件](#-会前必读文件)
-  - [1. Project Overview](#1-project-overview)
-  - [2. Team Division](#2-team-division)
-  - [3. Problem Definition](#3-problem-definition)
-  - [4. Folder Structure](#4-folder-structure)
-  - [5. Dataset Standardization](#5-dataset-standardization)
-  - [6. Evaluation Metrics](#6-evaluation-metrics)
-  - [7. Technical Routes](#7-technical-routes)
-    - [7.1 Dynamic Programming (DP)](#71-dynamic-programming-dp)
-    - [7.2 Graph Neural Network (GNN)](#72-graph-neural-network-gnn)
-    - [7.3 Deep Learning (DL)](#73-deep-learning-dl)
-  - [8. Experiments](#8-experiments)
-  - [9. Documentation and Meetings](#9-documentation-and-meetings)
-  - [10. Timeline](#10-timeline)
-    - [Week 1](#week-1)
-    - [Week 2](#week-2)
-    - [Week 3](#week-3)
-    - [Week 4](#week-4)
+# Knapsack Problem: DP vs GNN vs Reinforcement Learning (DQN)
 
-[toc]
+This repository presents a systematic comparison of three representative approaches for solving the **0/1 Knapsack Problem**:
+
+- **Dynamic Programming (DP)** – exact algorithm and ground-truth oracle  
+- **Graph Neural Network (GNN)** – supervised learning with structural reasoning  
+- **Reinforcement Learning (DQN)** – sequential decision-making via Deep Q-Network  
+
+The project was developed as part of **CPS 3440 (Algorithms)** and focuses on **fair comparison, reproducibility, and practical insights**, rather than solely pursuing best performance.
 
 ---
 
-## 0. Documentation and Meetings
+## 📌 Problem Overview
 
-All meeting notes and technical discussions will be stored in `docs/`.
+The **0/1 Knapsack Problem** is a classic NP-hard combinatorial optimization problem:
 
-## 📄 会前必读文件
-<!-- update for sync -->
-- [01｜会议规则说明](docs/3440会议规则.docx)
-- [02｜Git 分支结构说明](docs/Git分支结构说明.docx)
-- [03｜Git Hub Vscode 使用说明](docs/GitHub_Vscode使用说明.docx)
+> Given a set of items, each with a weight and value, select a subset of items such that the total weight does not exceed a capacity constraint while maximizing total value.
 
+This project explores how **different computational paradigms**—exact algorithms, supervised learning, and reinforcement learning—perform on the same knapsack instances.
 
 ---
 
-## 1. Project Overview
-This project compares three different methods to solve the **0/1 Knapsack Problem**:
+## 🧠 Methods Implemented
 
-- Dynamic Programming (DP) — optimal baseline  
-- Graph Neural Network (GNN) — graph-based learning method  
-- Deep Learning (DL) — item-wise prediction model (e.g., MLP / Transformer)
+### 1. Dynamic Programming (DP)
+- Classical exact solver for 0/1 knapsack
+- Time complexity: \(O(nW)\)
+- Used as a **ground-truth oracle**
+- Provides optimal values and item selections for evaluation and supervision
 
-**Deliverables:**
-
-- Source code for DP, GNN, and DL  
-- Unified dataset and evaluation metrics  
-- Experiment results and comparison  
-- Final report (paper)
-
----
-
-## 2. Team Division
-
-| Member   | Responsibility                    |
-|----------|-----------------------------------|
-| Member A | DP coding + experiments           |
-| Member B | DP coding + experiments           |
-| Garry    | GNN model + experiments           |
-| Member C | DL model (MLP/Transformer)        |
-| Member D | DL model (sequence / PointerNet)  |
-
-(可以之后把名字改成真实英文名或学号。)
+📂 Location:
+```
+Dynamic_Programming/
+tools/dp_baseline_eval.py
+```
 
 ---
 
-## 3. Problem Definition
+### 2. Graph Neural Network (GNN)
+- Supervised learning approach using **DP-optimal solutions as labels**
+- Each knapsack instance is modeled as a graph:
+  - Nodes = items
+  - Node features = weight, value, value density, normalized features
+- Uses message passing to capture global interactions
+- Inference uses greedy decoding to ensure feasibility
 
-We solve the **0/1 Knapsack Problem**:
-
-Given:
-
-- `weights = [w1, w2, ..., wn]`
-- `values  = [v1, v2, ..., vn]`
-- `capacity = C`
-
-Maximize:
-\[
-\sum_{i=1}^{n} v[i] \cdot x[i]
-\]
-
-Subject to:
-\[
-\sum_{i=1}^{n} w[i] \cdot x[i] \le C,\quad x[i] \in \{0,1\}
-\]
-
-All three methods (DP / GNN / DL) must solve **exactly the same formulation**.
+📂 Location:
+```
+Graph_Neural_Network/
+├── run_train.py
+├── evaluate_gnn.py
+└── gnn.pt
+```
 
 ---
 
-## 4. Folder Structure
+### 3. Reinforcement Learning (Deep Q-Network, DQN)
+- Knapsack formulated as a **sequential decision-making problem**
+- At each step, the agent decides to **select or skip** the current item
+- Uses:
+  - Experience replay
+  - Target network
+  - ε-greedy exploration
+- Tabular Q-learning was initially explored but found impractical due to large state space and lack of generalization
+- Final approach uses an MLP-based DQN
 
-```text
-project_root/
-│
-├── dp/
-│   ├── dp_solver.py          # or .java
-│   ├── dp_experiment.ipynb   # optional
-│
-├── gnn/
-│   ├── gnn_model.py
-│   ├── gnn_train.py
-│
-├── dl/
-│   ├── dl_model.py
-│   ├── dl_train.py
-│
+📂 Location:
+```
+Reinforcement_Learning/dqn_knapsack_project/
+├── train_dqn.py
+├── evaluate_dqn.py
+├── model.py
+└── train_meta.json
+```
+
+⚠️ **Note on training budget**  
+Due to hardware constraints, DQN was trained for **50k steps** (reduced from the originally planned 200k steps).  
+This choice was made to maintain a **reasonable and fair comparison** with GNN training cost under the same environment.
+
+---
+
+## 📊 Dataset
+
+- 1000 medium-difficulty 0/1 knapsack instances
+- Stored as `.npz` files
+- Each instance contains:
+  - `weights`: 1D array
+  - `values`: 1D array
+  - `capacity`: scalar
+- Dataset is **read-only** and shared by all methods
+
+📂 Location:
+```
+dataset/knapsack01_medium/
+```
+
+---
+
+## 🧪 Experimental Pipeline
+
+All methods follow a **unified evaluation protocol**:
+
+1. Load the same dataset
+2. DP computes optimal solutions (oracle)
+3. GNN and DQN are evaluated on the same instances
+4. Results are merged and summarized
+5. Metrics are computed consistently across methods
+
+📂 Result files:
+```
+results/
+├── DP/dp_results.csv
+├── GNN/gnn_eval_results.csv
+├── DQN/eval_results.csv
+└── compare/
+    ├── merged_results.csv
+    └── summary.json
+```
+
+A utility script is provided to merge results:
+```
+tools/merge_results.py
+```
+
+---
+
+## 📈 Evaluation Metrics
+
+- **Average Runtime (ms)**
+- **Optimality Gap** (relative to DP)
+- **Accuracy Rate**
+- **Stability Metrics**:
+  - Mean ± Standard Deviation
+  - Median Gap
+  - Interquartile Range (IQR)
+  - 95th Percentile Gap (P95)
+
+These metrics provide insight into **both average performance and robustness**.
+
+---
+
+## 🔍 Key Findings
+
+- **DP** provides exact optimal solutions and serves as a reliable benchmark, but scales poorly with capacity.
+- **GNN** achieves the best balance between speed, accuracy, and stability, closely approximating DP with fast inference.
+- **DQN** shows higher variance and lower solution quality under the current setup, highlighting the challenges of sequential RL for combinatorial optimization.
+
+---
+
+## 📁 Repository Structure
+
+```
+knapsack-DP-GNN-DL/
+├── Dynamic_Programming/
+├── Graph_Neural_Network/
+├── Reinforcement_Learning/
 ├── dataset/
-│   ├── knapsack_50.csv
-│   ├── knapsack_100.csv
-│   ├── knapsack_200.csv
-│
 ├── results/
-│   ├── dp_results.csv
-│   ├── gnn_results.csv
-│   ├── dl_results.csv
-│
+├── tools/
 ├── docs/
-│   ├── meeting_01.md
-│   ├── technical_notes.md
-│
-└── README.md
+├── README.md
+└── LICENSE
 ```
 
 ---
 
-## 5. Dataset Standardization
+## 📎 Notes
 
-We use the public 0/1 knapsack instances from:
-
-- https://people.sc.fsu.edu/~jburkardt/datasets/knapsack_01/
-
-**Rules:**
-
-- All methods (DP / GNN / DL) must use the **same dataset files**.
-- Convert or store them to a unified CSV format, for example:
-
-```text
-item_id,weight,value
-1,2,3
-2,4,6
-3,5,7
-...
-```
-
-Example Python loading snippet (optional):
-
-```python
-import pandas as pd
-
-df = pd.read_csv("dataset/knapsack_50.csv")
-weights = df["weight"].tolist()
-values = df["value"].tolist()
-capacity = 100  # set according to the instance definition
-```
+- This project emphasizes **methodological clarity and fair comparison**, not leaderboard performance.
+- All reported results correspond exactly to the experiments conducted and documented in the final report.
+- The repository is intended for **educational and research purposes**.
 
 ---
 
-## 6. Evaluation Metrics
+## 👤 Authors
 
-All methods must output results in a comparable way.
+Course Project for **CPS 3440 – Algorithms**  
+Wenzhou-Kean University  
 
-For each instance, each method should output:
-
-- `solution_vector`: a list of 0/1 (length = n), e.g. `[1,0,1,0,...]`
-- `total_value`: sum of values of selected items
-- `total_weight`: sum of weights of selected items
-- `feasible`: whether `total_weight <= capacity`
-- `runtime`: wall-clock time (in seconds or milliseconds)
-
-These metrics will be saved (for example) in `results/*.csv` and used for experiment tables in the paper.
+Team Leader: *Your Name*  
+Contributors: *Team Members*
 
 ---
 
-## 7. Technical Routes
+## 📜 License
 
-### 7.1 Dynamic Programming (DP)
-
-- State definition:  
-  `dp[i][w]` = maximum value using the first `i` items with capacity `w`.
-
-- Transition:
-
-  - Not taking item `i`:  
-    `dp[i][w] = dp[i-1][w]`
-  - Taking item `i` (if `w >= weight[i]`):  
-    `dp[i][w] = max(dp[i-1][w], dp[i-1][w - weight[i]] + value[i])`
-
-- After filling the DP table, use backtracking to recover a **0/1 solution vector**.
-
-- Output format:
-
-```text
-method=DP,
-solution=[1,0,1,0,...],
-total_value=XX,
-total_weight=YY,
-feasible=true/false,
-runtime=...
-```
-
----
-
-### 7.2 Graph Neural Network (GNN)
-
-- Build a graph where each item is a node. For simplicity, start with a **fully connected graph**.
-- Node features example:
-
-```text
-[weight, value, value/weight]
-```
-
-- Use a small GNN (e.g., 2-layer GCN or GraphSAGE):
-  - Message passing over nodes
-  - Non-linear transformations (ReLU + Linear)
-  - Final layer outputs a score for each item
-
-- Convert score to decision:
-  - Apply sigmoid
-  - Threshold (score > 0.5 → 1)
-
-- Training:
-  - Use DP optimal solution as label
-  - Loss: binary cross-entropy
-
-- Output: same structure as DP
-
----
-
-### 7.3 Deep Learning (DL)
-
-- Input: item feature matrix `(n_items, feature_dim)`  
-  Example: `[weight, value, value/weight]`
-
-- Model: MLP or Transformer
-- Output: probability per item
-- Decision: threshold → 0/1
-- Loss: binary cross-entropy
-- Output: same structure as DP and GNN
-
----
-
-## 8. Experiments
-
-We compare methods on different problem sizes (e.g., `n = 50, 100, 200`).
-
-**Metrics:**
-
-- `total_value`  
-- `feasible`  
-- `runtime`  
-- `approx_ratio = total_value / dp_optimal_value`
-
-Example results format:
-
-```text
-method,instance,n,total_value,total_weight,feasible,runtime,approx_ratio
-DP,knapsack_50,50,1234,98,True,0.001,1.0
-GNN,knapsack_50,50,1200,100,True,0.01,0.97
-DL,knapsack_50,50,1180,95,True,0.008,0.95
-```
-
----
-
-## 9. Documentation and Meetings
-
-All meeting notes and technical discussions will be stored in `docs/`.
-
-Example:
-
-- `docs/meeting_01.md`  
-- `docs/technical_notes.md`
-
----
-
-## 10. Timeline
-
-### Week 1
-- Learn basics of DP / GNN / DL
-- Finalize README
-- Download dataset
-
-### Week 2
-- Implement DP baseline
-- Implement GNN & DL skeletons
-
-### Week 3
-- Run experiments
-- Save results in `/results`
-
-### Week 4
-- Analyze results & write paper
-- Prepare presentation
-```}
+This project is released under the MIT License. See `LICENSE` for details.
